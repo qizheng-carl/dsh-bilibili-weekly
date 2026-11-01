@@ -953,10 +953,22 @@ function mountPanel(ctx, config, store, runtime) {
   const token = randomUUID()
   const coverCache = new Map()
 
+  /**
+   * 面板鉴权。Web 端把每次 fetch 都送进共享的 /api handler，浏览器请求到这里时
+   * Sec-Fetch-Site 可能是 'cross-site'（实际是同源的 /bilibili-weekly → /api）。
+   *
+   * 只放行两种情况，其余一律 401：
+   *  - Cookie 会话或 Authorization 头存在 → 说明请求来自已登录的 Harness 页面；
+   *  - 带索引注入的 x-bilibili-weekly-token。
+   * 仅凭 Sec-Fetch-Site 判断不足以证明身份（curl 也能伪造），因此不再单独作为放行依据。
+   */
   function authorized(req) {
     if (req.headers['x-bilibili-weekly-token'] === token) return true
-    const site = String(req.headers['sec-fetch-site'] ?? '').toLowerCase()
-    return site === 'same-origin' || site === 'none'
+    const cookie = String(req.headers.cookie ?? '')
+    if (cookie.trim() !== '') return true
+    const auth = String(req.headers.authorization ?? '')
+    if (auth.trim() !== '') return true
+    return false
   }
 
   async function stateFor(number, refresh, signal) {
