@@ -1,0 +1,53 @@
+{
+  "name": "dsh-bilibili-weekly",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin: read the Bilibili weekly must-watch list (每周必看) and generate a weekly report, with an in-app panel.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Carlapple2025-gif",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "bilibili",
+    "weekly",
+    "report",
+    "周报"
+  ],
+  "homepage": "https://github.com/Carlapple2025-gif/dsh-bilibili-weekly#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Carlapple2025-gif/dsh-bilibili-weekly.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Carlapple2025-gif/dsh-bilibili-weekly/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  }
+}

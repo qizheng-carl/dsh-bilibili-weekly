@@ -1,0 +1,8 @@
+- insert:
+    # B站每周必看：数据抓取、周报生成工具，以及右侧周报面板。
+    - id: bilibili-weekly
+      name: 'dsh-bilibili-weekly'
+      config:
+        topN: 10
+        enrich: true
+        enablePanel: true
