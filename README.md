@@ -13,7 +13,12 @@ plugin_manager  action: install_bundle   target: dsh-bilibili-weekly
 plugin_manager  action: install_bundle   target: github:Carlapple2025-gif/dsh-bilibili-weekly
 ```
 
-第一条从 npm 装，第二条从 GitHub 装。装完即可在 Plugins 页看到「B站每周必看 · 周报」，Web 端右下方出现周报面板。
+第一条从 npm 装，第二条从 GitHub 装。两条都已实测可用。
+
+- npm: https://www.npmjs.com/package/dsh-bilibili-weekly
+- GitHub: https://github.com/Carlapple2025-gif/dsh-bilibili-weekly
+
+装完即可在 Plugins 页看到「B站每周必看 · 周报」，Web 端右下方出现周报面板。
 
 ## 数据来源
 
