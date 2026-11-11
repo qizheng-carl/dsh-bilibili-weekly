@@ -46,6 +46,9 @@ const DEFAULTS = {
   timeoutMs: 12000,
   enablePanel: true,
   registerSkill: true,
+  enableWallpaper: true,
+  wallSpeed: 60,
+  wallVeil: 0.78,
 }
 
 /* ------------------------------------------------------------------ config */
@@ -73,7 +76,16 @@ function normalizeConfig(raw) {
   config.enrich = config.enrich !== false
   config.enablePanel = config.enablePanel !== false
   config.registerSkill = config.registerSkill !== false
+  config.enableWallpaper = config.enableWallpaper !== false
+  config.wallSpeed = clampInt(config.wallSpeed, 15, 900, DEFAULTS.wallSpeed)
+  config.wallVeil = clampNumber(config.wallVeil, 0.1, 0.92, DEFAULTS.wallVeil)
   return config
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return fallback
+  return Math.min(max, Math.max(min, number))
 }
 
 function clampInt(value, min, max, fallback) {
@@ -971,12 +983,20 @@ function mountPanel(ctx, config, store, runtime) {
     return false
   }
 
-  async function stateFor(number, refresh, signal) {
+  /**
+   * 面板数据。`light` 只取榜单原始数据（含封面），不补抓每条视频详情——
+   * 封面背景只需要封面地址，避免为了壁纸打满一次 enrich。
+   */
+  async function stateFor(number, refresh, signal, light) {
     const series = await store.ensureSeries({ refresh, signal })
     if (series.length === 0) throw new Error('期数列表为空')
     const picked = Number(number) > 0 ? Math.round(Number(number)) : series[0].number
     const seriesRow = series.find((row) => row.number === picked) ?? series[0]
-    const week = await store.ensureWeek(picked, { refresh, enrich: config.enrich, signal })
+    const week = await store.ensureWeek(picked, {
+      refresh,
+      enrich: config.enrich && !light,
+      signal,
+    })
     return panelStatePayload(week, seriesRow, series, buildStats(week))
   }
 
@@ -1002,7 +1022,12 @@ function mountPanel(ctx, config, store, runtime) {
       const url = new URL(req.url ?? '/bilibili-weekly/state', 'http://localhost')
       try {
         const number = Number(url.searchParams.get('number') ?? 0)
-        const payload = await stateFor(number, url.searchParams.get('refresh') === '1')
+        const payload = await stateFor(
+          number,
+          url.searchParams.get('refresh') === '1',
+          undefined,
+          url.searchParams.get('light') === '1',
+        )
         jsonResponse(res, 200, payload)
       } catch (error) {
         jsonResponse(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
@@ -1055,7 +1080,13 @@ function mountPanel(ctx, config, store, runtime) {
 
   ctx.effect(() => webServer.tapIndex((html) => html.replace(
     '</head>',
-    `<script>window.__BILI_WEEKLY__=${JSON.stringify({ api: '/bilibili-weekly', token })}</script></head>`,
+    `<script>window.__BILI_WEEKLY__=${JSON.stringify({
+      api: '/bilibili-weekly',
+      token,
+      wall: config.enableWallpaper ? 1 : 0,
+      wallSpeed: config.wallSpeed,
+      wallVeil: config.wallVeil,
+    })}</script></head>`,
   )))
 }
 
@@ -1078,6 +1109,8 @@ function registerSkill(ctx, config) {
     '4. `bilibili_weekly` `{ "action": "list" }` —— 可选期数。',
     '',
     '## 说明',
+    '- Web 端右侧周报面板可切换期数、生成周报；面板标题栏的九宫格按钮开关「封面背景」。',
+    '- 封面背景：当期榜单封面铺满客户端背景并缓慢向上滚动，薄纱浓度与速度由 `wallVeil` / `wallSpeed` 配置。',
     '- 数据来自 `app.bilibili.com/x/v2/show/popular/selected`（页面 Web 接口对匿名客户端返回 -352 风控）。',
     '- 每条视频会再补抓 `x/web-interface/view` 得到播放/点赞/投币/收藏/弹幕/时长。',
     '- 结果缓存在 `~/.dsh/bilibili-weekly/cache.json`；`refresh: true` 跳过缓存。',

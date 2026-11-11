@@ -1,8 +1,8 @@
 # dsh-bilibili-weekly
 
-DeepSeek Harness 插件：读取 B 站[「每周必看」榜单](https://www.bilibili.com/v/popular/weekly)，生成一页 Markdown 周报，并在 Web 端右侧常驻一个周报面板。
+DeepSeek Harness 插件：读取 B 站[「每周必看」榜单](https://www.bilibili.com/v/popular/weekly)，生成一页 Markdown 周报，在 Web 端右侧常驻一个周报面板，并把当期封面铺成一面会滚动的客户端背景。
 
-> 当前版本：`0.1.0` · 无运行时依赖（只用 Node 内置模块）· MIT
+> 当前版本：`0.2.0` · 无运行时依赖（只用 Node 内置模块）· MIT
 
 ## 安装
 
@@ -41,6 +41,22 @@ plugin_manager  action: install_bundle   target: github:Carlapple2025-gif/dsh-bi
     返回值里同时带完整 `markdown`，需要放到工作区时由 Agent 用 `write` 落盘即可。
 - **技能 `bilibili-weekly`** —— 告诉 Agent 什么时候、怎么用这个工具。
 - **Web 面板**（`shell.overlay`）—— 期数切换、封面列表、数据概览、一键生成周报、复制周报。
+- **封面背景**（0.2.0 新增）—— 把当期榜单的视频封面铺成一面会缓慢向上滚动的墙，垫在整个 Harness
+  客户端下面。
+
+## 封面背景
+
+开启后客户端变成「当期封面墙」：
+
+- 取当期榜单的全部封面（不额外补抓视频详情，走 `/state?light=1`），4 列 16:9 网格，
+  尺寸用 `vw/vh` 表达，窗口缩放不变形。
+- 无缝滚动：整块封面层是 `html::before`（负 z-index、`pointer-events:none`），用 GPU
+  `transform` 平移一份网格的高度后循环，不会因为主线程繁忙而卡顿。
+- 可读性：`html::after` 压一层按当前主题配色的薄纱（浅色偏白、深色偏黑），并把
+  `--dsw-alias-bg-base` 覆盖成 `transparent`，让会话区透出封面——其余卡片、弹窗仍是不透明的
+  主题表面。
+- 尊重 `prefers-reduced-motion`：系统开启「减弱动态效果」时不滚动，只留静态封面墙。
+- 关掉：面板标题栏右侧的九宫格按钮（状态记在 localStorage），或把 `enableWallpaper` 设为 `false`。
 
 ## 配置
 
@@ -54,6 +70,9 @@ plugin_manager  action: install_bundle   target: github:Carlapple2025-gif/dsh-bi
         topN: 10            # 榜单展示条数
         enrich: true        # 是否补抓每条视频详情（播放/点赞/投币/收藏/弹幕）
         enablePanel: true   # 是否挂载 Web 面板
+        enableWallpaper: true  # 是否把封面铺成客户端背景
+        wallSpeed: 60       # 整面墙滚动一份网格的秒数（越大越慢）
+        wallVeil: 0.78      # 薄纱不透明度 0.1–0.92，越大越淡、正文越清楚
 ```
 
 其余可选项：`dataDir`（默认 `~/.dsh/bilibili-weekly`）、`reportDir`（默认 `<dataDir>/reports`）、`maxEnrich`（默认 60）、`enrichConcurrency`（默认 4）、`cacheMinutes`（默认 30）、`timeoutMs`（默认 12000）。
@@ -85,7 +104,9 @@ plugin_manager  action: remove_bundle   target: dsh-bilibili-weekly
 ## 已知限制
 
 - 依赖 B 站公开接口，接口或其风控策略变化时可能需要更新版本。
-- 面板只在 Harness Web UI 内渲染；纯本地 CLI 场景下用工具 `bilibili_weekly` 即可。
+- 面板与封面背景只在 Harness Web/Desktop 客户端内渲染；纯本地 CLI 场景下用工具 `bilibili_weekly` 即可。
+- 封面背景依赖主题 token `--dsw-alias-bg-base`（Harness 用它画会话区底色）。若未来版本改了这个 token 的语义，背景会自动退回普通底色，不会影响其他 UI。
+- 封面墙固定取 12 张（4×3）当期封面做一层、复制一份做无缝循环；期数更新后最多 30 分钟生效。
 - 周报里的「分区」来自视频详情接口的二级分区名，再归并到一级分组；未识别的分区归入「其他」。
 
 ## License

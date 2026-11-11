@@ -1,7 +1,7 @@
 {
   "name": "dsh-bilibili-weekly",
-  "version": "0.1.2",
-  "description": "DeepSeek Harness plugin: read the Bilibili weekly must-watch list (每周必看) and generate a weekly report, with an in-app panel.",
+  "version": "0.2.0",
+  "description": "DeepSeek Harness plugin: read the Bilibili weekly must-watch list (每周必看), generate a weekly report, and scroll the week's video covers as the app wallpaper.",
   "type": "module",
   "license": "MIT",
   "author": "Carlapple2025-gif",

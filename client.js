@@ -29,6 +29,8 @@ window.__ModuleLoader__.load({
         empty: 'No entries for this week yet.',
         rank: 'Rank',
         noReport: 'Generating report…',
+        wallOn: 'Cover wallpaper: on',
+        wallOff: 'Cover wallpaper: off',
       },
       zh: {
         title: 'B站每周必看',
@@ -54,6 +56,8 @@ window.__ModuleLoader__.load({
         empty: '本期暂无数据。',
         rank: '排名',
         noReport: '正在生成周报…',
+        wallOn: '封面背景：开（点按关闭）',
+        wallOff: '封面背景：关（点按开启）',
       },
     }
 
@@ -240,6 +244,206 @@ window.__ModuleLoader__.load({
       return { base: typeof cfg.api === 'string' && cfg.api ? cfg.api : '/bilibili-weekly', token: cfg.token || '' }
     }
 
+    /* ----------------------------------------------------------- wallpaper */
+
+    // 封面墙网格：4 列 × 3 行作为一份，垂直复制一份做无缝循环，整体向上平移一份的高度。
+    const WALL_COLS = 4
+    const WALL_ROWS = 3
+    const WALL_ROW_VH = 34
+    const WALL_GAP = 0.9
+    const WALL_UNIQUE = WALL_COLS * WALL_ROWS
+    const WALL_KEY = 'dsh.bilibili-weekly.wall'
+
+    function wallOptions() {
+      const cfg = window.__BILI_WEEKLY__ || {}
+      const speed = Number(cfg.wallSpeed)
+      const veil = Number(cfg.wallVeil)
+      return {
+        enabled: cfg.wall !== 0,
+        speed: Number.isFinite(speed) && speed >= 10 ? speed : 60,
+        veil: Number.isFinite(veil) ? Math.min(0.92, Math.max(0.1, veil)) : 0.78,
+      }
+    }
+
+    const wallPref = {
+      value: (() => {
+        try { return window.localStorage.getItem(WALL_KEY) !== '0' } catch { return true }
+      })(),
+      listeners: new Set(),
+    }
+
+    function setWallPref(next) {
+      wallPref.value = next
+      try { window.localStorage.setItem(WALL_KEY, next ? '1' : '0') } catch { /* ignore */ }
+      for (const listener of wallPref.listeners) listener(next)
+    }
+
+    function useWallPref() {
+      const [on, setOn] = React.useState(wallPref.value)
+      React.useEffect(() => {
+        const listener = (next) => setOn(next)
+        wallPref.listeners.add(listener)
+        setOn(wallPref.value)
+        return () => { wallPref.listeners.delete(listener) }
+      }, [])
+      return [on, setWallPref]
+    }
+
+    const wallCache = { promise: null, covers: [], at: 0 }
+
+    /**
+     * 取本周封面的代理地址（不走直连，避免 B站 CDN 的 referer 限制）。
+     * 与面板共用同一份 Host 缓存，30 分钟内不重复请求。
+     */
+    function loadWallCovers() {
+      if (wallCache.covers.length > 0 && Date.now() - wallCache.at < 30 * 60 * 1000) {
+        return Promise.resolve(wallCache.covers)
+      }
+      if (wallCache.promise) return wallCache.promise
+      const { base, token } = apiBase()
+      wallCache.promise = fetch(`${base}/state?light=1`, {
+        headers: token ? { 'x-bilibili-weekly-token': token } : {},
+        cache: 'no-store',
+      })
+        .then((response) => (response.ok ? response.json().catch(() => null) : null))
+        .then((body) => {
+          const videos = body && Array.isArray(body.videos) ? body.videos : []
+          const seen = new Set()
+          const covers = []
+          for (const video of videos) {
+            const raw = video && typeof video.cover === 'string' ? video.cover : ''
+            if (raw === '' || seen.has(raw)) continue
+            seen.add(raw)
+            covers.push(`${base}/cover?u=${encodeURIComponent(raw)}`)
+          }
+          wallCache.covers = covers
+          wallCache.at = Date.now()
+          return covers
+        })
+        .catch(() => wallCache.covers)
+        .then((covers) => {
+          wallCache.promise = null
+          return covers
+        })
+      return wallCache.promise
+    }
+
+    function shuffle(list, seed) {
+      const out = list.slice()
+      let state = seed || 1
+      for (let index = out.length - 1; index > 0; index -= 1) {
+        state = (state * 1103515245 + 12345) & 0x7fffffff
+        const swap = state % (index + 1)
+        const value = out[index]
+        out[index] = out[swap]
+        out[swap] = value
+      }
+      return out
+    }
+
+    /**
+     * 生成封面墙的 CSS：`html::before` 承载封面（GPU 平移），`html::after` 压一层
+     * 与主题匹配的薄纱保证正文可读；同时把 `--dsw-alias-bg-base` 换成透明，
+     * 让会话区透出封面。背景层排在负 z-index，位于所有内容之下。
+     */
+    function buildWallCss(covers, options) {
+      const unique = shuffle(covers.slice(0, WALL_UNIQUE), covers.length)
+      if (unique.length === 0) return ''
+      const cellW = 100 / WALL_COLS
+      const imageW = cellW - WALL_GAP
+      const imageH = WALL_ROW_VH - WALL_GAP
+      const images = []
+      const sizes = []
+      const positions = []
+      for (let row = 0; row < WALL_ROWS * 2; row += 1) {
+        for (let col = 0; col < WALL_COLS; col += 1) {
+          const slot = (row % WALL_ROWS) * WALL_COLS + col
+          const cover = unique[slot % unique.length]
+          images.push(`url("${cover}")`)
+          sizes.push(`${imageW.toFixed(3)}vw ${imageH.toFixed(3)}vh`)
+          positions.push(`${(col * cellW + WALL_GAP / 2).toFixed(3)}vw ${(row * WALL_ROW_VH + WALL_GAP / 2).toFixed(3)}vh`)
+        }
+      }
+      const period = (WALL_ROWS * WALL_ROW_VH).toFixed(2)
+      const height = (WALL_ROWS * 2 * WALL_ROW_VH).toFixed(2)
+      const veil = options.veil
+      const lightTop = Math.max(0.12, veil - 0.08).toFixed(3)
+      const lightBottom = Math.min(0.95, veil + 0.08).toFixed(3)
+      const darkTop = Math.max(0.12, veil - 0.06).toFixed(3)
+      const darkBottom = Math.min(0.96, veil + 0.1).toFixed(3)
+      return `
+html { background-color: #eef0f4; }
+html::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: ${height}vh;
+  z-index: -2;
+  pointer-events: none;
+  background-image: ${images.join(', ')};
+  background-size: ${sizes.join(', ')};
+  background-position: ${positions.join(', ')};
+  background-repeat: no-repeat;
+  transform: translate3d(0, 0, 0);
+  animation: bilibili-weekly-wall ${options.speed}s linear infinite;
+  will-change: transform;
+}
+html::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,${lightTop}), rgba(255,255,255,${lightBottom}));
+}
+html:has(body[data-ds-dark-theme]) { background-color: #16171b; }
+html:has(body[data-ds-dark-theme])::after {
+  background: linear-gradient(180deg, rgba(9,10,14,${darkTop}), rgba(9,10,14,${darkBottom}));
+}
+@keyframes bilibili-weekly-wall {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, -${period}vh, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html::before { animation: none; }
+}
+`
+    }
+
+    function Wallpaper(props) {
+      const ctx = props.ctx
+      const options = wallOptions()
+      const [enabled] = useWallPref()
+      const [covers, setCovers] = React.useState(wallCache.covers)
+      const active = options.enabled && enabled
+
+      React.useEffect(() => {
+        if (!active) return undefined
+        let alive = true
+        loadWallCovers().then((next) => {
+          if (alive && Array.isArray(next) && next.length > 0) setCovers(next)
+        })
+        return () => { alive = false }
+      }, [active])
+
+      const ready = active && covers.length > 0
+
+      // 只有封面就绪后才把会话区背景变透明，避免加载期间露出空窗。
+      React.useEffect(() => {
+        if (!ready) return undefined
+        const theme = ctx && typeof ctx.get === 'function' ? ctx.get('theme') : null
+        if (!theme || typeof theme.overrideTokens !== 'function') return undefined
+        return theme.overrideTokens('dsh-bilibili-weekly', {
+          '--dsw-alias-bg-base': { light: 'transparent', dark: 'transparent' },
+        })
+      }, [ready, ctx])
+
+      if (!ready) return null
+      return h('style', { 'data-bilibili-weekly-wall': '' }, buildWallCss(covers, options))
+    }
+
     function chip(label, value) {
       return h('div', {
         key: `${label}-${value}`,
@@ -257,10 +461,11 @@ window.__ModuleLoader__.load({
       return {
         position: 'fixed',
         right: 12,
-        top: 76,
+        // 让开右上角的状态胶囊（其他插件也会用 shell.overlay 的同一角）。
+        top: 128,
         width: collapsed ? 'auto' : 392,
         maxWidth: 'calc(100vw - 24px)',
-        maxHeight: 'calc(100vh - 100px)',
+        maxHeight: 'calc(100vh - 152px)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -368,6 +573,8 @@ window.__ModuleLoader__.load({
       const [mode, setMode] = React.useState('list')
       const [report, setReport] = React.useState({ loading: false, markdown: '', error: '' })
       const [copied, setCopied] = React.useState(false)
+      const [wallOn, setWallOn] = useWallPref()
+      const wallFeature = wallOptions().enabled
       const alive = React.useRef(true)
 
       React.useEffect(() => () => { alive.current = false }, [])
@@ -429,7 +636,6 @@ window.__ModuleLoader__.load({
       const stats = data?.stats
       const videos = data?.videos ?? []
       const series = data?.series ?? []
-
       const header = h('div', {
         style: {
           display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
@@ -452,7 +658,31 @@ window.__ModuleLoader__.load({
           h('div', { style: { fontWeight: 650, fontSize: 12.5, whiteSpace: 'nowrap' } }, t('title')),
           h('div', { style: { color: TOKENS.textSoft, fontSize: 10.5, whiteSpace: 'nowrap' } },
             week ? `第 ${week.number} 期 · ${week.subject || '—'}` : t('subtitle'))),
-        h('span', { style: { marginLeft: 'auto', color: TOKENS.textSoft, fontSize: 11 } }, collapsed ? '▸' : '▾'))
+        wallFeature
+          ? h('button', {
+            type: 'button',
+            title: wallOn ? t('wallOn') : t('wallOff'),
+            'aria-pressed': wallOn,
+            onClick: (event) => {
+              event.stopPropagation()
+              setWallOn(!wallOn)
+            },
+            style: {
+              marginLeft: 'auto', flex: '0 0 auto', width: 22, height: 22, padding: 0,
+              border: 'none', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+              background: wallOn ? TOKENS.brand : TOKENS.bgSoft,
+              color: wallOn ? '#fff' : TOKENS.textSoft,
+            },
+          }, h('svg', {
+            width: 12, height: 12, viewBox: '0 0 12 12', 'aria-hidden': 'true', focusable: 'false',
+          }, [0, 6].map((y) => [0, 6].map((x) => h('rect', {
+            key: `${x}-${y}`, x, y, width: 5, height: 5, rx: 1.2, fill: 'currentColor',
+          })))))
+          : null,
+        h('span', {
+          style: { marginLeft: wallFeature ? 6 : 'auto', color: TOKENS.textSoft, fontSize: 11 },
+        }, collapsed ? '▸' : '▾'))
 
       if (collapsed) return h('div', { style: panelStyle(true) }, header)
 
@@ -583,6 +813,11 @@ window.__ModuleLoader__.load({
         ctx.slots.inject('shell.overlay', () => ctx.slots.register(
           { name: 'shell.overlay', id: 'bilibili-weekly', order: 78, label: 'B站每周必看' },
           (props) => h(Panel, { ...props, t }),
+        ))
+
+        ctx.slots.inject('shell.overlay', () => ctx.slots.register(
+          { name: 'shell.overlay', id: 'bilibili-weekly-wall', order: 77, label: 'B站每周必看 · 封面背景' },
+          (props) => h(Wallpaper, { ...props, ctx, t }),
         ))
       },
     }

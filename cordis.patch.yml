@@ -1,8 +1,11 @@
 - insert:
-    # B站每周必看：数据抓取、周报生成工具，以及右侧周报面板。
+    # B站每周必看：数据抓取、周报生成工具，右侧周报面板，以及可滚动封面背景。
     - id: bilibili-weekly
       name: 'dsh-bilibili-weekly'
       config:
         topN: 10
         enrich: true
         enablePanel: true
+        enableWallpaper: true
+        wallSpeed: 60
+        wallVeil: 0.78
